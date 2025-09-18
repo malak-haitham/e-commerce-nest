@@ -1,0 +1,88 @@
+/* eslint-disable prettier/prettier */
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User, UserRole } from './entities/user.entity';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import * as bcrypt from 'bcrypt';
+
+@Injectable()
+export class UsersService {
+    constructor(
+        @InjectRepository(User)
+        private readonly userRepository: Repository<User>,
+    ) { }
+
+    async create(createUserDto: CreateUserDto): Promise<User> {
+        const { email, name, password, role } = createUserDto;
+        const existingUser = await this.userRepository.findOne({
+            where: { email: email },
+        });
+
+        if (existingUser) {
+            throw new ConflictException('Email already exists');
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const user = this.userRepository.create({
+            email: email,
+            name: name,
+            role: UserRole.CUSTOMER,
+            password: hashedPassword,
+        });
+
+        return this.userRepository.save(user);
+    }
+    async findAll(offset: number = 1, limit: number = 10): Promise<{}> {
+        const [data, count] = await this.userRepository.findAndCount({
+            skip: offset,
+            take: limit,
+            order: { createdAt: 'DESC' },
+        });
+
+        return {
+            data,
+            count,
+        };
+    }
+    async findOne(id: number): Promise<User | null> {
+        return this.userRepository.findOne({
+            where: { id: id },
+        });
+    }
+
+    async findByEmail(email: string): Promise<User | null> {
+        return this.userRepository.findOne({
+             where: { email },
+        });
+    }
+
+    async getById(id: number): Promise<User | null> {
+        return this.findOne(id);
+    }
+
+    async updatePassword(id: number, hashedPassword: string): Promise<void > {
+        const user = await this.findOne(id);
+        if (!user) {
+            throw new NotFoundException(`User with id ${id} not found`);
+        }
+        user.password = hashedPassword;
+        await this.userRepository.save(user);
+    }
+    
+    async update(id: number, updateData: UpdateUserDto): Promise<User|null> {
+        return this.findOne(id);
+    }
+
+    async remove(id: number): Promise<{ message: string }> {
+
+        const user = await this.findOne(id);
+        if (!user) {
+            throw new NotFoundException(`User with id ${id} not found`);
+        }
+        await this.userRepository.remove(user);
+        return { message: 'User deleted successfully'};
+    }
+}
